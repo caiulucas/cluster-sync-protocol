@@ -24,18 +24,18 @@ class Client:
         except socket.error as e:
             print(f"Erro ao conectar: {e}")
 
-    def send_request(self):
+    def send_request(self, connection):
         
         content = {
             "id": self.id,
             "timestamp": time.time()
         }
         content = json.dumps(content)
-        self.socket.sendall(content)
+        self.socket.sendall(content.encode())
         print(f"Sending the json:\n{content}\n to\nip: {self.ip}\nport:{self.port}")
 
-    def await_reponse(self):
-        response =  self.connect.recv(BUFFER_SIZE).decode()
+    def await_reponse(self, connection):
+        response =  connection.recv(BUFFER_SIZE).decode()
         content = json.loads(response)
         print(f"Received the json:\n{content}")
 
@@ -47,10 +47,13 @@ class Client:
         print("Conexão encerrada.")
 
     def __call__(self):
-        for _ in range(self.request_number):
-            self.send_request()
-            self.await_reponse()
-            self.sleep()            
+          
+        with self.socket as connection:
+            for _ in range(self.request_number):
+                self.send_request(connection)
+                self.await_reponse(connection)
+                self.sleep(connection)
+            connection.close()
 
     def __repr__(self):
         return f'Client(value={self.value}, ip={self.ip}, port={self.port})'
