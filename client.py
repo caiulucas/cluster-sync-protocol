@@ -2,14 +2,14 @@ import random
 import socket
 import json
 import time
-from constants import BUFFER_SIZE
+from constants import BUFFER_SIZE, DEFAULT_PORT
 
 
 class Client:
-    def __init__(self, ip: str, port: int, id: int):
+    def __init__(self, ip: str, port, id: int):
         self.id = id
         self.ip = ip
-        self.port = port
+        self.port = DEFAULT_PORT + 111 * self.id
         self.value = random.randint(10, 50)
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -19,6 +19,7 @@ class Client:
 
     def connect(self):
         try:
+            print(f"Tentando conectar na porta {self.port} do cluster\n")
             self.socket.connect((self.ip, self.port))
             print(f"Conectado ao servidor {self.ip}:{self.port}")
         except socket.error as e:
@@ -35,9 +36,22 @@ class Client:
         print(f"Sending the json:\n{content}\n to\nip: {self.ip}\nport:{self.port}")
 
     def await_reponse(self, connection):
-        response =  connection.recv(BUFFER_SIZE).decode()
-        content = json.loads(response)
-        print(f"Received the json:\n{content}")
+        while True:
+            try:
+                response =  connection.recv(BUFFER_SIZE).decode()
+                if not response:  # Caso a resposta esteja vazia
+                    raise ValueError("Resposta vazia recebida")
+                content = json.loads(response)
+                
+                print(f"Received the json:\n{content}")
+            except json.JSONDecodeError as e:
+                print(f"Erro ao decodificar JSON da resposta do cluster {self.id}: {e}")
+            except socket.error as e:
+                print(f"Erro ao receber resposta do cluster {self.id}: {e}")
+            except ValueError as e:
+                print(f"Value Error: {e}")
+
+
 
     def sleep(self):
         time.sleep(random.uniform(1, 5))

@@ -3,5 +3,5 @@ from constants import DEFAULT_PORT
 
 if __name__ == "__main__":
 
-    cluster = ClusterElement(5, "127.0.0.1", "127.0.0.1", DEFAULT_PORT)
+    cluster = ClusterElement(5, "127.0.0.1", 5, "127.0.0.1")
     cluster.run()

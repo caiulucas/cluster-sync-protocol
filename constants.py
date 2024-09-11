@@ -1,8 +1,6 @@
 import socket
-
 BUFFER_SIZE = 1024
-DEFAULT_PORT = 14000
-CLUSTER_NUMBER = 2
+DEFAULT_PORT = 10000
 
 class ElementInfo:
     def __init__(self, id: int, ip: str):
