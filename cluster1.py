@@ -1,16 +1,7 @@
-from cluster_element import ClusterElement, clusters
-
-
+from cluster_element import ClusterElement
+from constants import DEFAULT_PORT
 
 if __name__ == "__main__":
-    #hello world
 
-
-    cluster1 = ClusterElement(
-        clusters['cluster1'].get('id'),
-        clusters['cluster1'].get('ip'),
-        '127.0.0.1',
-        6001
-    )
-    
-    cluster1.connect_clusters()
+    cluster = ClusterElement(1, "127.0.0.1", "127.0.0.1", DEFAULT_PORT)
+    cluster.run()

@@ -2,8 +2,8 @@ import random
 import socket
 import json
 import time
+from constants import BUFFER_SIZE
 
-BUFFER_SIZE = 1024
 
 class Client:
     def __init__(self, ip: str, port: int, id: int):
