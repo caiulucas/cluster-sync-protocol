@@ -44,6 +44,10 @@ class Client:
                 content = json.loads(response)
                 
                 print(f"Received the json:\n{content}")
+
+                if(content.get('status') == 'commited'):
+                    break
+
             except json.JSONDecodeError as e:
                 print(f"Erro ao decodificar JSON da resposta do cluster {self.id}: {e}")
             except socket.error as e:
@@ -54,8 +58,10 @@ class Client:
 
 
     def sleep(self):
+        print("Dormindo")
         time.sleep(random.uniform(1, 5))
-    
+        print("Acordei")
+
     def close(self):
         self.socket.close()
         print("Conexão encerrada.")
@@ -63,7 +69,8 @@ class Client:
     def __call__(self):
           
         with self.socket as connection:
-            for _ in range(self.request_number):
+            for i in range(self.request_number):
+                print(f"--------------\nPedido {i + 1}.")
                 self.send_request(connection)
                 self.await_reponse(connection)
                 self.sleep(connection)

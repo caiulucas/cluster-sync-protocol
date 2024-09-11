@@ -1,6 +1,6 @@
 import socket
 BUFFER_SIZE = 1024
-DEFAULT_PORT = 14000
+DEFAULT_PORT = 13000
 
 class ElementInfo:
     def __init__(self, id: int, ip: str):

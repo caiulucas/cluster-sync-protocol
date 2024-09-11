@@ -2,6 +2,7 @@ import socket
 import json
 import threading
 import time
+import random
 
 from constants import BUFFER_SIZE, DEFAULT_PORT, ElementInfo
 from constants import cluster1, cluster2, cluster3, cluster4, cluster5
@@ -14,7 +15,7 @@ class ClusterElement:
         self.listen_port = DEFAULT_PORT + self.id * 100
         self.cluster_list = [cluster1, cluster2, cluster3, cluster4, cluster5]
         del self.cluster_list[self.id - 1]
-
+        self.timestamp = None
         self.client_info = ClientInfo(client_id, client_ip, DEFAULT_PORT + 111 * client_id)
         self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -44,19 +45,21 @@ class ClusterElement:
         self.listen_socket.listen(4)
         print(f"Escutando {self.listen_port}")
 
+
         while True:
             conn, addr = self.listen_socket.accept()
             t_conn = threading.Thread(target=self.cluster_message, args=(conn, addr))
             t_conn.start()
 
     def cluster_message(self, conn, addr):
-        request = conn.recv(BUFFER_SIZE)
-        
-        print(request.decode())
-        t_handler_message = threading.Thread(target=self.cluster_message_handler, args=(request,))
-        t_handler_message.start()
+        while True:
+            request = conn.recv(BUFFER_SIZE)
 
-        conn.sendall(json.dumps({"status": "commited"}).encode())
+            print(request.decode())
+            t_handler_message = threading.Thread(target=self.cluster_message_handler, args=(request,))
+            t_handler_message.start()
+
+        # conn.sendall(json.dumps({"status": "commited"}).encode())
 
                     
     def cluster_message_handler(self, request):
@@ -64,7 +67,6 @@ class ClusterElement:
         cluster_message_id = message.get('id')
         command = message.get('command')
 
-        print(f"Comando '{command}' recebido do cluster{cluster_message_id}")
         if(command == 'update_timestamp'):
             for cluster in self.cluster_list:
                 if cluster.id == cluster_message_id:
@@ -74,8 +76,8 @@ class ClusterElement:
                     print(f"Update no timestamp do cluster{cluster.id} de {old_timestamp} para {cluster.timestamp}")
                     break
 
-        if command == 'request_priority':
-            print(f"Cluster{cluster_message_id} requisitou prioridade")
+        elif (command == 'request_priority'):
+            print(f"Cluster{cluster_message_id} requisitou prioridade\n")
 
             if self.timestamp == None:
                 self.send_ok(cluster_message_id)
@@ -89,14 +91,15 @@ class ClusterElement:
             else:
                 self.wait_to_send_ok(cluster_message_id)
 
-        if command == 'ok':
+        elif (command == 'ok'):
+            print(f"Recebido OK do cluster{cluster_message_id}")
             for cluster in self.cluster_list:
                 if cluster.id == cluster_message_id:
-                    print(f"Recebido OK do cluster{cluster.id}")
                     cluster.confirmation = True
                     break;
         
-        if command == 'delete_timestamp':
+        elif (command == 'delete_timestamp'):
+            print(f"Recebido comando delete_timestamp do cluster{cluster_message_id}")
             for cluster in self.cluster_list:
                 if cluster.id == cluster_message_id:
                     cluster.timestamp = None
@@ -114,31 +117,39 @@ class ClusterElement:
         for cluster in self.cluster_list:
             if cluster.id == cluster_message_id:
                 cluster.socket.sendall(content.encode())
+                print(f"Sending ok to cluster{cluster.id}\n")
                 break
         return
     
 
     def wait_to_send_ok(self, cluster_message_id):
         while True:
-            # ok_numbers = 0
-
-            # for cluster in self.cluster_list:
-            #     if cluster.confirmation == True:
-            #         ok_numbers += 1
-
-            # if(ok_numbers == len(self.cluster_list)):
+            
             if(self.timestamp == None):
                 self.send_ok(cluster_message_id)
     
-    def delete_timestamp(self):
+    def delete_all_timestamp(self):
+        self.timestamp = None
+        print(f"Enviando delete timestamp para todos os clusters")
+        threads = []
+
+        for cluster in self.cluster_list:
+            t = threading.Thread(target=self.delete_timestamp, args=(cluster,))
+            t.start()
+            threads.append(t)
+
+            for t in threads:
+                t.join()
+
+    def delete_timestamp(self, cluster):
+
         delete_json = {
             "id": self.id,
             "command": "delete_timestamp",
         }
         content = json.dumps(delete_json)
+        cluster.socket.sendall(content.encode())
 
-        for cluster in self.cluster_list:
-            cluster.socket.sendall(content)
 
     def run(self):
 
@@ -183,47 +194,71 @@ class ClusterElement:
                     
                     t_send_all.join()
 
-
-
-                    while True:
-                        print("Esperando resposta.")
-                        time.sleep(20)
-                    # conn.sendall(json.dumps({"status": "commited"}).encode())
+                    conn.sendall(json.dumps({"status": "commited"}).encode())
                 
 
     def client_request_handler(self):
-        print("request handler")
-        print("Sending timestamp to all")
         self.send_all_timestamp()
-        # print("Pedindo prioridade")
-        # self.request_priority()
+        self.request_priority()
 
-        while True:
-            print(f"Esperando para acessar recurso R")
-            time.sleep(20)
-        #pode acessar?
-        #acessa o recurso R
+        self.waiting_priority()
 
-        self.delete_timestamp()
-        self.timestamp = None
+        self.access_critical_zone()
+
+        self.delete_all_timestamp()
 
     def request_priority(self):
-        
+        print("Pedindo prioridade para os clusters.")
+        for cluster in self.cluster_list:
+            threads = []
+            t = threading.Thread(target=self.send_priority, args=(cluster,))
+            t.start()
+            threads.append(t)
+
+            for t in threads:
+                t.join()
+
+
+    def send_priority(self, cluster):
         priority_json = {
             "id": self.id,
             "command": "request_priority"
         }
-
         content = json.dumps(priority_json)
+        cluster.socket.sendall(content.encode())
+        print(f"Asking for priority to cluster{cluster.id}")
+
+
+    def waiting_priority(self):
+        print(f"Esperando confirmação para acessar o recurso R.")
+        while True:
+            ok_numbers = 0
+
+            for cluster in self.cluster_list:
+                if cluster.confirmation == True:
+                    ok_numbers += 1
+
+            if(ok_numbers == len(self.cluster_list)):
+                print(f"Confirmação recebida para acessar o recurso R.")                
+                break
+        
+    def delete_confimations(self):
         for cluster in self.cluster_list:
-            print(f"-------------\nEnviando priority json to cluster{cluster.id}\n-------------")
-            try:
-                cluster.socket.sendall(content.encode())
-                print(f"Sending the timestamp json:\n to cluster: {cluster.id}\n")
-            except socket.error as e:
-                print(f"Erro ao enviar timestamp para o cluster {cluster.id}: {e}")
+            cluster.confirmation = False
+    
+    def access_critical_zone(self):
+        print(f"Acessando a zona crítica.")
+        self.delete_confimations()
+        # Gera um número aleatório entre 0.2 e 1 segundo
+        random_sleep = random.uniform(0.2, 1.0)
+
+        # Faz o programa "dormir" por esse tempo
+        time.sleep(random_sleep)
+        print(f"Finalizando zona crítica.")
+
 
     def send_all_timestamp(self):
+        print("Sending timestamp to all clusters.")
         threads = []
         for cluster in self.cluster_list:
             if cluster.socket:
