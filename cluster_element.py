@@ -41,16 +41,23 @@ class ClusterElement:
 
     def listen_clusters(self):
         self.listen_socket.bind((self.ip, self.listen_port))
-        self.listen_socket.listen()
+        self.listen_socket.listen(4)
         print(f"Escutando {self.listen_port}")
 
         while True:
-                conn, addr = self.listen_socket.accept()
-                with conn:
-                    request = conn.recv(BUFFER_SIZE)
-                    
-                    t_handler_message = threading.Thread(target=self.cluster_message_handler, args=(request,))
-                    t_handler_message.start()
+            conn, addr = self.listen_socket.accept()
+            t_conn = threading.Thread(target=self.cluster_message, args=(conn, addr))
+            t_conn.start()
+
+    def cluster_message(self, conn, addr):
+        request = conn.recv(BUFFER_SIZE)
+        
+        print(request.decode())
+        t_handler_message = threading.Thread(target=self.cluster_message_handler, args=(request,))
+        t_handler_message.start()
+
+        conn.sendall(json.dumps({"status": "commited"}).encode())
+
                     
     def cluster_message_handler(self, request):
         message = json.loads(request.decode())
@@ -107,7 +114,7 @@ class ClusterElement:
         for cluster in self.cluster_list:
             if cluster.id == cluster_message_id:
                 cluster.socket.sendall(content.encode())
-                break;
+                break
         return
     
 
@@ -210,14 +217,23 @@ class ClusterElement:
         content = json.dumps(priority_json)
         for cluster in self.cluster_list:
             print(f"-------------\nEnviando priority json to cluster{cluster.id}\n-------------")
-            cluster.socket.sendall(content.encode())
+            try:
+                cluster.socket.sendall(content.encode())
+                print(f"Sending the timestamp json:\n to cluster: {cluster.id}\n")
+            except socket.error as e:
+                print(f"Erro ao enviar timestamp para o cluster {cluster.id}: {e}")
 
     def send_all_timestamp(self):
         threads = []
         for cluster in self.cluster_list:
-            send_thread = threading.Thread(target=self.send_timestamp, args=(cluster,))
-            send_thread.start()
-            threads.append(send_thread)
+            if cluster.socket:
+                #     #            Enviar mensagem
+                # send_thread = threading.Thread(target=self.send_timestamp, args=(cluster,))
+                # send_thread.start()
+                # threads.append(send_thread)
+                self.send_timestamp(cluster)
+            else:
+                print(f"Cluster {cluster.id} ainda não está conectado.")
 
         for t in threads:
             t.join()
@@ -231,7 +247,7 @@ class ClusterElement:
         }
         content = json.dumps(timestamp_json)
         cluster.socket.sendall(content.encode())
-        print(f"Sending the timestamp json:\n to cluster: {cluster.id}\n")
+        print(f"Sending the timestamp json:\n to cluster: {cluster.id} on port {cluster.port}\n")
 
 
 
