@@ -22,6 +22,7 @@ class Client:
             print(f"Tentando conectar na porta {self.port} do cluster\n")
             self.socket.connect((self.ip, self.port))
             print(f"Conectado ao servidor {self.ip}:{self.port}")
+            time.sleep(10)
         except socket.error as e:
             print(f"Erro ao conectar: {e}")
 
@@ -73,7 +74,7 @@ class Client:
                 print(f"--------------\nPedido {i + 1}.")
                 self.send_request(connection)
                 self.await_reponse(connection)
-                self.sleep(connection)
+                self.sleep()
             connection.close()
 
     def __repr__(self):

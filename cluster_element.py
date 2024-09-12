@@ -63,6 +63,7 @@ class ClusterElement:
 
                     
     def cluster_message_handler(self, request):
+        
         message = json.loads(request.decode())
         cluster_message_id = message.get('id')
         command = message.get('command')
@@ -78,17 +79,28 @@ class ClusterElement:
 
         elif (command == 'request_priority'):
             print(f"Cluster{cluster_message_id} requisitou prioridade\n")
+            
+            cluster = None
+
+            for c in self.cluster_list:
+                if c.id == cluster_message_id:
+                    cluster = c
+                    break
 
             if self.timestamp == None:
+                # print(f"Timestamp None")
                 self.send_ok(cluster_message_id)
             elif cluster.timestamp < self.timestamp:
+                # print(f"timestamp cluster{cluster_message_id} < cluster{self.id}")
                 self.send_ok(cluster_message_id)
             elif cluster.timestamp == self.timestamp:
+                # print(f"Timestamp IGUAL")
                 if  self.id > cluster.id:
                     self.send_ok(cluster_message_id)
                 else:
                     self.wait_to_send_ok(cluster_message_id)
             else:
+                # print(f"else, timestamp cluster{cluster_message_id} > cluster{self.id}")
                 self.wait_to_send_ok(cluster_message_id)
 
         elif (command == 'ok'):
@@ -123,10 +135,12 @@ class ClusterElement:
     
 
     def wait_to_send_ok(self, cluster_message_id):
+        print(f"Esperando para mandar ok para o cluster {cluster_message_id}")
         while True:
             
             if(self.timestamp == None):
                 self.send_ok(cluster_message_id)
+                break
     
     def delete_all_timestamp(self):
         self.timestamp = None
@@ -185,16 +199,21 @@ class ClusterElement:
                     if not request:
                         break
 
-                    content = json.loads(request.decode())
-                    self.timestamp = content.get('timestamp')
-                    print(f"TimeStamp:{self.timestamp} recebido do cliente.")
+                    try:
+                        content = json.loads(request.decode())
+                        
+                        self.timestamp = content.get('timestamp')
+                        print(f"TimeStamp:{self.timestamp} recebido do cliente.")
 
-                    t_send_all = threading.Thread(target=self.client_request_handler)
-                    t_send_all.start()
+                        t_send_all = threading.Thread(target=self.client_request_handler)
+                        t_send_all.start()
                     
-                    t_send_all.join()
+                        t_send_all.join()
 
-                    conn.sendall(json.dumps({"status": "commited"}).encode())
+                        conn.sendall(json.dumps({"status": "commited"}).encode())
+                    except:
+                        conn.close()
+                        return
                 
 
     def client_request_handler(self):
