@@ -18,15 +18,23 @@ class ClusterElement:
         self.timestamp = None
         self.client_info = ClientInfo(client_id, client_ip, DEFAULT_PORT + 111 * client_id)
         self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.all_threads = []
+        self.stop_event = threading.Event()
 
+    def check_stop_cluster(self):
+        stop = input()
+        if stop == "":
+            self.stop_event.set()
+            print("\n\n\n\n\nSTOP EVENT ENVIADO \n\n\n\n\n")
 
     def connect_to_all_clusters(self):
         for cluster in self.cluster_list:
             t = threading.Thread(target=self.connect_to_cluster, args=(cluster,))
+            t.daemon = True
             t.start()
 
     def connect_to_cluster(self, cluster:ElementInfo):
-        while True:
+        while not self.stop_event.is_set():
             try:
                 print(f"Tentando connectar cluster {self.id} ao cluster {cluster.id}")
                 cluster.socket.connect((cluster.ip, cluster.port))
@@ -46,17 +54,19 @@ class ClusterElement:
         print(f"Escutando {self.listen_port}")
 
 
-        while True:
+        while not self.stop_event.is_set():
             conn, addr = self.listen_socket.accept()
             t_conn = threading.Thread(target=self.cluster_message, args=(conn, addr))
+            t_conn.daemon = True
             t_conn.start()
 
     def cluster_message(self, conn, addr):
-        while True:
+        while not self.stop_event.is_set():
             request = conn.recv(BUFFER_SIZE)
 
             print(request.decode())
             t_handler_message = threading.Thread(target=self.cluster_message_handler, args=(request,))
+            t_handler_message.daemon = True
             t_handler_message.start()
 
         # conn.sendall(json.dumps({"status": "commited"}).encode())
@@ -136,7 +146,7 @@ class ClusterElement:
 
     def wait_to_send_ok(self, cluster_message_id):
         print(f"Esperando para mandar ok para o cluster {cluster_message_id}")
-        while True:
+        while not self.stop_event.is_set():
             
             if(self.timestamp == None):
                 self.send_ok(cluster_message_id)
@@ -149,6 +159,7 @@ class ClusterElement:
 
         for cluster in self.cluster_list:
             t = threading.Thread(target=self.delete_timestamp, args=(cluster,))
+            t.daemon = True
             t.start()
             threads.append(t)
 
@@ -170,16 +181,21 @@ class ClusterElement:
         threads = []
 
         t = threading.Thread(target=self.listen_clusters)
+        t.daemon = True
         t.start()
         threads.append(t)
 
         self.connect_to_all_clusters()
 
         t_client = threading.Thread(target=self.listen_client)
+        t_client.daemon = True
         t_client.start()
         threads.append(t_client)
         
-        
+        t_stop_signal = threading.Thread(target=self.check_stop_cluster)
+        t_stop_signal.daemon = True
+        t_stop_signal.start()
+        threads.append(t_stop_signal)
 
         # Espera todas as threads 
         for t in threads:
@@ -189,12 +205,12 @@ class ClusterElement:
         self.client_info.socket.bind((self.ip, self.client_info.port))
         self.client_info.socket.listen()
         print(f"Escutando cliente na porta {self.client_info.port}")
-        while True:
+        while not self.stop_event.is_set():
             conn, addr = self.client_info.socket.accept()
             with conn:
                 print(f"ClusterElement {self.id} conectado com o cliente {addr}")
 
-                while True:
+                while not self.stop_event.is_set():
                     request = conn.recv(BUFFER_SIZE)
                     if not request:
                         break
@@ -206,6 +222,7 @@ class ClusterElement:
                         print(f"TimeStamp:{self.timestamp} recebido do cliente.")
 
                         t_send_all = threading.Thread(target=self.client_request_handler)
+                        t_send_all.daemon = True
                         t_send_all.start()
                     
                         t_send_all.join()
@@ -217,20 +234,25 @@ class ClusterElement:
                 
 
     def client_request_handler(self):
-        self.send_all_timestamp()
-        self.request_priority()
 
-        self.waiting_priority()
+        try:
+            self.send_all_timestamp()
+            self.request_priority()
 
-        self.access_critical_zone()
+            self.waiting_priority()
 
-        self.delete_all_timestamp()
+            self.access_critical_zone()
+
+            self.delete_all_timestamp()
+        except Exception as e:
+            print(f"Ocorreu um erro: {e}")
 
     def request_priority(self):
         print("Pedindo prioridade para os clusters.")
         for cluster in self.cluster_list:
             threads = []
             t = threading.Thread(target=self.send_priority, args=(cluster,))
+            t.daemon = True
             t.start()
             threads.append(t)
 
@@ -250,7 +272,7 @@ class ClusterElement:
 
     def waiting_priority(self):
         print(f"Esperando confirmação para acessar o recurso R.")
-        while True:
+        while not self.stop_event.is_set():
             ok_numbers = 0
 
             for cluster in self.cluster_list:

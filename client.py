@@ -51,10 +51,13 @@ class Client:
 
             except json.JSONDecodeError as e:
                 print(f"Erro ao decodificar JSON da resposta do cluster {self.id}: {e}")
+                break
             except socket.error as e:
                 print(f"Erro ao receber resposta do cluster {self.id}: {e}")
+                break
             except ValueError as e:
                 print(f"Value Error: {e}")
+                break
 
 
 
