@@ -1,6 +1,6 @@
 import socket
 BUFFER_SIZE = 1024
-DEFAULT_PORT = 17000
+DEFAULT_PORT = 14000
 
 class ElementInfo:
     def __init__(self, id: int, ip: str):
@@ -18,6 +18,8 @@ cluster3 = ElementInfo(3, "127.0.0.1")
 cluster4 = ElementInfo(4, "127.0.0.1")
 cluster5 = ElementInfo(5, "127.0.0.1")
 
+cluster_list = [cluster1, cluster2, cluster3, cluster4, cluster5]
+
 class ClusterStoreInfo:
     def __init__(self, id:int, ip: str):
         self.id = id
@@ -32,3 +34,5 @@ class ClusterStoreInfo:
 store1 =  ClusterStoreInfo(1, "127.0.0.1")
 store2 =  ClusterStoreInfo(2, "127.0.0.1")
 store3 =  ClusterStoreInfo(3, "127.0.0.1")
+
+store_list = [store1, store2, store3]

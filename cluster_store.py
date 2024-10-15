@@ -7,13 +7,14 @@ import os
 
 from constants import BUFFER_SIZE, DEFAULT_PORT, ClusterStoreInfo
 from constants import store1, store2, store3
+from constants import cluster_list
 
 
 class ClusterStore:
     def __init__(self, id:int, ip:str, primary = False):
         self.id = id
         self.ip = ip
-        
+
         self.store_list = [store1, store2, store3]
         del self.store_list[self.id - 1]
         
@@ -26,6 +27,26 @@ class ClusterStore:
         self.threads = []
 
 
+    def start_cluster_socket(self):
+        time.sleep(10)
+        threads = []
+        for cluster in cluster_list:
+            t = threading.Thread(target=self.connect_to_cluster, args=(cluster,))
+            t.start()
+            threads.append(t)
+        
+        for t in threads:
+            t.join()
+        
+        print("\n\nTodos os Clusters Conectados\n\n")
+
+    
+    def connect_to_cluster(self, cluster):
+        print(f"Conectando o cluster {cluster.id}")
+        cluster.socket.connect((cluster.ip, cluster.port))
+        print(f"Conectado o cluster {cluster.id}")
+        
+
     def connect_stores(self):
         for store in self.store_list:
             t = threading.Thread(target=self.connect_store, args=(store,))
@@ -35,7 +56,6 @@ class ClusterStore:
             t.start()
 
     def connect_store(self, store: ClusterStoreInfo):
-
         time.sleep(3)
         try:
             while not self.stop_event.is_set():
@@ -56,7 +76,7 @@ class ClusterStore:
            
     def listen_store(self):
         self.listen_socket.bind((self.ip, self.listen_port))
-        self.listen_socket.listen(2)
+        self.listen_socket.listen(7)
         # print(f"Escutando {self.listen_port}")
 
         try:
@@ -78,11 +98,11 @@ class ClusterStore:
                 # print(request.decode())
                 t_handler_message = threading.Thread(target=self.store_message_handler, args=(request,))
                 t_handler_message.daemon = True
+                # print(f"Thread t_handler_message criado: {t_handler_message}")
                 # print("mensagem |" + request.decode()+"|")
                 if(request.decode() == ""):
                     # print("mensagem vazia")
                     break
-                # print(f"Thread t_handler_message criado: {t_handler_message}")
 
                 self.threads.append(t_handler_message)
 
@@ -92,28 +112,173 @@ class ClusterStore:
 
     def store_message_handler(self, request):
         try:
-
             message = json.loads(request.decode())
-            store_message_id = message.get('id')
+            id = message.get('id')
             command = message.get('command')
 
             if(command == 'ping'):
                 for store in self.store_list:
-                    if(store.id == store_message_id):
+                    if(store.id == id):
                         store.last_ping = time.time()
 
-            if (command == 'request_primary_info'):
-                self.send_primary_info(store_message_id)
+            elif (command == 'request_primary_info'):
+                self.send_primary_info(id)
 
-            if(command == 'update_primary_info'):
+            elif(command == 'update_primary_info'):
                 for store in self.store_list:
-                    if(store.id == store_message_id):
+                    if(store.id == id):
                         store.primary = message.get('primary_info')
                         store.timestamp = message.get('timestamp')
+
+            elif(command == 'request_access_critical_zone'):
+                # print(f"Acesso requerido pelo cluster {id}")
+                # self.send_cricital_zone_confimartion(id)
+                t = threading.Thread(target=self.handler_request_critical_zone, args=(id, message.get("id_client"), message.get('timestamp')))
+                # print(f"Thread t_handler_request_critical_zone criado: {t}")
+                t.daemon = True
+                t.start()
+            
+            elif(command == 'redirect'):
+                
+                print(f"\033[35mRecebido Redirecionamento da Store {id}.\033[0m\n")
+
+                id_cluster = message.get('id_cluster')
+                id_client = message.get('id_client')
+                timestamp = message.get('timestamp')
+                
+                t = threading.Thread(target=self.handler_access_critical_zone, args=(id, id_cluster, id_client, timestamp))
+                # print(f"Thread t_access_critical_zone criado: {t}")
+                
+                t.daemon = True
+                t.start()
+
+            elif(command == 'confirm_critical_zone'):
+                id_cluster = message.get('id_cluster')
+                # print(f"Thread t_handler_send_cluster_confirmation: {t}")
+                t = threading.Thread(target=self.handler_send_cluster_confirmation, args=(id_cluster,))
+                t.daemon = True
+                t.start()
+
         except Exception as e:
             pass
+    
+    def handler_send_cluster_confirmation(self, id_cluster):
+        cluster_confirmation_json = {
+            "id": self.id,
+            "command": "store_confirmation",
+        }
+        content = json.dumps(cluster_confirmation_json)
+
+        try: 
+            for cluster in cluster_list:
+                if cluster.id == id_cluster:    
+                    cluster.socket.sendall(content.encode())
+
+        except Exception as e:
+            print(f"Erro ao enviar confirm_cluster_access. Erro {e}")
+
+    def handler_access_critical_zone(self, id_redirected_store, id_cluster, id_client, timestamp):
+        
+        self.access_critical_zone(id_redirected_store, id_cluster, id_client, timestamp)
+        self.handler_send_cluster_confirmation(id_cluster)
+
+    
+    def send_update_db(self):
+        pass
+
+    #  Mandando pra store primária resolver meu problema.
+    def send_critical_zone_confirmation(self, id, id_cluster):
+        critical_zone_confirmation_json = {
+            "id": self.id,
+            "command": "confirm_critical_zone",
+            "id_cluster": id_cluster
+        }
+
+        for store in self.store_list:
+            if store.id == id:
+                try:
+                    content = json.dumps(critical_zone_confirmation_json)
+                    if store.connection:
+                        store.socket.sendall(content.encode())
+                except:
+                    print("Erro ao enviar critical_zone_confimartion_json")
+    
+    def handler_request_critical_zone(self, id_cluster, id_client, timestamp):
+
+        if self.primary:
+            self.access_critical_zone(self.id, id_cluster, id_client, timestamp)
+            self.handler_send_cluster_confirmation(id_cluster)
+
+        else:
+            print("Redirecionando para store principal")
+            self.redirect_critical_zone_request(id_cluster, id_client, timestamp)
+
+    def redirect_critical_zone_request(self, id_cluster, id_client, timestamp):
+        for store in self.store_list:
+            if store.primary:
+                self.send_redirect_message(id_cluster, id_client, timestamp, store)
+
+        
+    
+    def send_redirect_message(self, id_cluster, id_client, timestamp, store: ClusterStoreInfo):
+        redirect_json = {
+            "id": self.id,
+            "command": "redirect",
+            "id_cluster": id_cluster,
+            "id_client": id_client,
+            "timestamp": timestamp
+        }
+        
+        try:
+            content = json.dumps(redirect_json)
+            store.socket.sendall(content.encode())
+        except Exception as e:
+            print("Erro ao redirecionar pedido.\n")
+
+    def send_cricital_zone_confimartion(self, id_cluster):
+
+        for cluster in cluster_list:
+            if cluster.id == id_cluster:
+
+                confirmation_json = {
+                    "id": self.id,
+                    "command": "store_confirmation",
+                }
+                try:
+                    
+                    cluster = None
+                    for c in cluster_list:
+                        if c.id == id_cluster:
+                            cluster = c
+                            break
+
+                    content = json.dumps(confirmation_json)
+                    cluster.socket.sendall(content.encode())
+                    # cluster.socket.shutdown(socket.SHUT_RDWR)
+                    # cluster.socket.close()
+                    # cluster.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                except Exception as e:
+                    print("Erro ao enviar ping.\n")
+
+    # def connect_cluster(self, cluster_id):
+    #     for cluster in cluster_list:
+    #         if cluster.id == cluster_id:
+    #             try:
+    #                 cluster.socket.connect((cluster.ip, cluster.port))
+    #                 # self.store = store
+    #                 message = f"Store {self.id} CONECTOU AO CLUSTER {cluster.id}"
+    #                 border_length = len(message) + 4
+    #                 print(f"\n\n+{'-' * border_length}+\n| {message} |\n+{'-' * border_length}+")
+    #                 return cluster
+                
+    #             except:
+    #                 pass
 
     def run(self):
+
+        t_start_cluster_socket = threading.Thread(target = self.start_cluster_socket)
+        t_start_cluster_socket.start()
+    
 
         t = threading.Thread(target=self.listen_store)
         self.threads.append(t)
@@ -134,13 +299,11 @@ class ClusterStore:
         t_ping_all.start()
         # print(f"Thread t_ping_all criado: {t_ping_all}")
 
-
         t_check_connections = threading.Thread(target=self.check_connections)
         self.threads.append(t_check_connections)
         t_check_connections.daemon = True
         t_check_connections.start()
         # print(f"Thread t_check_connections criado: {t_check_connections}")
-
 
         self.connect_stores()
         self.election()
@@ -150,7 +313,6 @@ class ClusterStore:
         
         while not self.stop_event.is_set():
             time.sleep(1)
-
 
     def ping(self, store:ClusterStoreInfo):
         ping_json = {
@@ -311,8 +473,16 @@ class ClusterStore:
         while not self.stop_event.is_set():
             for store in self.store_list:
                 if store.connection:
+
                     t = threading.Thread(target=self.ping, args=(store,))
                     self.threads.append(t)
                     t.daemon = True
                     t.start()
             time.sleep(5)
+    
+    def access_critical_zone(self, id, id_cluster, id_client, timestamp):
+        random_sleep = random.uniform(0.2, 1)
+        time.sleep(random_sleep)
+        print("ACESSANDO A CRITICAL ZONE")
+
+    
