@@ -8,7 +8,6 @@ from constants import BUFFER_SIZE, DEFAULT_PORT, ElementInfo
 from constants import cluster1, cluster2, cluster3, cluster4, cluster5
 from constants import store_list
 
-
 class ClusterElement:
     def __init__(self, id:int, ip: int, client_id:int, client_ip: str):
         self.id = id
@@ -82,7 +81,7 @@ class ClusterElement:
         
         if(request.decode() == ''):
             return
-        print(f"message:|{request}|")
+        # print(f"message:|{request}|")
         message = json.loads(request.decode())
 
         cluster_message_id = message.get('id')
@@ -259,7 +258,6 @@ class ClusterElement:
             print("Esperando prioridade")
             self.waiting_priority()
 
-            print("Acessando zona crítica")
             self.access_critical_zone()
 
             print("Deletando timestamp")
@@ -309,14 +307,14 @@ class ClusterElement:
             cluster.confirmation = False
     
     def access_critical_zone(self):
-        print(f"\033[31mAcessando a zona crítica.\033[0m")
+        print(f"\033[31mConectando a store para acessar recurso R.\033[0m")
         self.delete_confimations()
         # Gera um número aleatório entre 0.2 e 1 segundo
 
-        timeout = 3
+        timeout = 10
 
         while not self.stop_event.is_set():
-
+            count = 0
             try: 
                 store = self.connect_to_store()
                 store.socket.settimeout(timeout)
@@ -326,15 +324,24 @@ class ClusterElement:
 
                     while(self.waiting_store):
                         time.sleep(0.5)
+                        count += 1
+                        print("No loop.")
+                        if count >= timeout:
+                            store.connection = False
+                            store.socket.shutdown(socket.SHUT_RDWR)
+                            store.socket.close()
+                            store.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            raise Exception('Timeout. Número máximo de tentativas atingido')
 
-                    print(f"\033[31mEscrita realizada\033[0m")
+
 
                     store.connection = False
                     store.socket.shutdown(socket.SHUT_RDWR)
                     store.socket.close()
                     store.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     
-                    print(f"\033[31mFinalizando zona crítica.\033[0m")
+                    print(f"\033[31mFinalizando acesso ao recurso R\033[0m")
+                    
 
                     self.waiting_store = True
 
@@ -342,12 +349,11 @@ class ClusterElement:
 
     
                 else:
-                    print(f"\033[31mErro ao acessar store\033[0m")
+                    print(f"\033[31mErro ao acessar store {store.id}\033[0m")
 
-            except socket.timeout:
+            except Exception as e:
                 print(f"\033[33mTimeout ao acessar store, tentando novamente...\033[0m")
-                continue  # Tentar novamente
-
+                
 
     def send_all_timestamp(self):
         print("Sending timestamp to all clusters.")
@@ -399,6 +405,8 @@ class ClusterElement:
 
 
     def send_request_to_store(self, store):
+        print(f"\033[31mEnviando requisição a store {store.id}.\033[0m")
+
         request_json = {
             "id": self.id,
             "command": "request_access_critical_zone",
@@ -420,4 +428,5 @@ class ClientInfo:
         self.ip = ip
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
 

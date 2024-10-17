@@ -7,7 +7,7 @@ import os
 
 from constants import BUFFER_SIZE, DEFAULT_PORT, ClusterStoreInfo
 from constants import store1, store2, store3
-from constants import cluster_list
+from constants import cluster_list, store_list
 
 
 class ClusterStore:
@@ -28,7 +28,6 @@ class ClusterStore:
 
 
     def start_cluster_socket(self):
-        time.sleep(10)
         threads = []
         for cluster in cluster_list:
             t = threading.Thread(target=self.connect_to_cluster, args=(cluster,))
@@ -37,13 +36,19 @@ class ClusterStore:
         
         for t in threads:
             t.join()
-        
+            
         print("\n\nTodos os Clusters Conectados\n\n")
 
     
     def connect_to_cluster(self, cluster):
         print(f"Conectando o cluster {cluster.id}")
-        cluster.socket.connect((cluster.ip, cluster.port))
+        while not self.stop_event.is_set():
+            try:
+                cluster.socket.connect((cluster.ip, cluster.port))
+                break
+            except:
+                time.sleep(3)
+
         print(f"Conectado o cluster {cluster.id}")
         
 
@@ -95,14 +100,15 @@ class ClusterStore:
             while not self.stop_event.is_set():
                 request = conn.recv(BUFFER_SIZE)
 
+                if(request.decode() == ""):
+                    conn.close()
+                    break
+
                 # print(request.decode())
                 t_handler_message = threading.Thread(target=self.store_message_handler, args=(request,))
                 t_handler_message.daemon = True
                 # print(f"Thread t_handler_message criado: {t_handler_message}")
                 # print("mensagem |" + request.decode()+"|")
-                if(request.decode() == ""):
-                    # print("mensagem vazia")
-                    break
 
                 self.threads.append(t_handler_message)
 
@@ -146,10 +152,9 @@ class ClusterStore:
                 id_client = message.get('id_client')
                 timestamp = message.get('timestamp')
                 
-                t = threading.Thread(target=self.handler_access_critical_zone, args=(id, id_cluster, id_client, timestamp))
+                t = threading.Thread(target=self.handler_redirect, args=(id, id_cluster, id_client, timestamp))
                 # print(f"Thread t_access_critical_zone criado: {t}")
-                
-                t.daemon = True
+                t.daesmon = True
                 t.start()
 
             elif(command == 'confirm_critical_zone'):
@@ -158,10 +163,34 @@ class ClusterStore:
                 t = threading.Thread(target=self.handler_send_cluster_confirmation, args=(id_cluster,))
                 t.daemon = True
                 t.start()
+            elif (command == 'redirect_access_confirmation'):
+                id_cluster = message.get('id_cluster')
+                id_client = message.get('id_client')
+                timestamp = message.get('timestasmp')
+
+                t = threading.Thread(target=self.handler_redirect_access_confirmation, args=(id_cluster, id_client, timestamp))
+                t.daemon = True
+                t.start()
+
+            elif(command == 'write_file'):
+                t = threading.Thread(target=self.handler_write_file, args=(message.get('log'),))
+                t.daemon = True
+                t.start()
 
         except Exception as e:
             pass
     
+    def handler_write_file(self, log):
+        self.write_file(log)
+
+    def handler_redirect_access_confirmation(self, id_cluster, id_client, timestamp):
+        self.handler_send_cluster_confirmation(id_cluster)
+
+    def handler_redirect(self, id, id_cluster, id_client, timestamp):
+        self.handler_access_critical_zone(id, id_cluster, id_client, timestamp)
+
+
+
     def handler_send_cluster_confirmation(self, id_cluster):
         cluster_confirmation_json = {
             "id": self.id,
@@ -180,12 +209,29 @@ class ClusterStore:
     def handler_access_critical_zone(self, id_redirected_store, id_cluster, id_client, timestamp):
         
         self.access_critical_zone(id_redirected_store, id_cluster, id_client, timestamp)
-        self.handler_send_cluster_confirmation(id_cluster)
-
+        
+        if(id_redirected_store == self.id):
+            self.handler_send_cluster_confirmation(id_cluster)
+        else:
+            self.send_redirected_access_confirmation(id_redirected_store, id_cluster, id_client, timestamp)
     
-    def send_update_db(self):
-        pass
+    def send_redirected_access_confirmation(self, id_store, id_cluster, id_client, timestamp):
+        
+        print(f"\033[35mResolvido o redirect da store {id_store}. Devolvendo a confirmação.\033[0m")
+        redirect_access_confirmation_json = {
+            "id": self.id,
+            "command": "redirect_access_confirmation",
+            "id_client": id_client,
+            "id_cluster": id_cluster,
+            "timestamp": timestamp 
+        }
+        content = json.dumps(redirect_access_confirmation_json)
 
+        for store in store_list:
+            if store.id == id_store:
+                store.socket.sendall(content.encode())
+                break
+    
     #  Mandando pra store primária resolver meu problema.
     def send_critical_zone_confirmation(self, id, id_cluster):
         critical_zone_confirmation_json = {
@@ -206,6 +252,7 @@ class ClusterStore:
     def handler_request_critical_zone(self, id_cluster, id_client, timestamp):
 
         if self.primary:
+            print(f"\033[35mRecebido um peido do cliente {id_client}.\033[0m")
             self.access_critical_zone(self.id, id_cluster, id_client, timestamp)
             self.handler_send_cluster_confirmation(id_cluster)
 
@@ -431,7 +478,7 @@ class ClusterStore:
             # print("\n--------------------------\n")
             t.join()
         print(f"Desligando agora.")
-        os._exit(1)
+        os._exit()
     
     def check_stop_store(self):
         stop = input()
@@ -468,6 +515,7 @@ class ClusterStore:
                     
             time.sleep(5)
     
+   
     def ping_all(self):
         time.sleep(5)
         while not self.stop_event.is_set():
@@ -480,9 +528,41 @@ class ClusterStore:
                     t.start()
             time.sleep(5)
     
-    def access_critical_zone(self, id, id_cluster, id_client, timestamp):
+    def access_critical_zone(self, id_store, id_cluster, id_client, timestamp):
         random_sleep = random.uniform(0.2, 1)
-        time.sleep(random_sleep)
-        print("ACESSANDO A CRITICAL ZONE")
+        
+        log_string = f"Timestamp: {timestamp} | Cliente: {id_client} | Cluster: {id_cluster} | Store: {id_store}\n"
+        
+        print("\033[91m\nACESSANDO A CRITICAL ZONE\033[0m")
+        self.write_file(log_string)
+        print("\033[91mSAINDO DA CRITICAL ZONE\n\033[0m")
 
+        self.send_write_file(log_string)
+
+
+    def write_file(self, log_string):
+
+        with open(f"logs/store{self.id}.log", 'a') as file:
+            file.write(log_string)
+
+        if(self.id == 1):
+            self.shutdown(0)
     
+    def send_write_file(self, log_string):
+        write_file_json = {
+            "id": self.id,
+            "command": "write_file",
+            "log": log_string
+        }
+
+        try:
+            content = json.dumps(write_file_json)
+
+            for store in store_list:
+                if store.connection:
+                    store.socket.sendall(content.encode())
+
+        except:
+            print("Erro ao enviar comando de write_file.\n")
+
+                
