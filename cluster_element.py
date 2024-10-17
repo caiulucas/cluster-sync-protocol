@@ -325,7 +325,6 @@ class ClusterElement:
                     while(self.waiting_store):
                         time.sleep(0.5)
                         count += 1
-                        print("No loop.")
                         if count >= timeout:
                             store.connection = False
                             store.socket.shutdown(socket.SHUT_RDWR)
