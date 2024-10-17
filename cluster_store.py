@@ -10,6 +10,9 @@ from constants import store1, store2, store3
 from constants import cluster_list, store_list
 
 
+SHUTDOWN_ON_WRITE = False
+SHUTDOWN_30_SECONDS = False
+
 class ClusterStore:
     def __init__(self, id:int, ip:str, primary = False):
         self.id = id
@@ -435,8 +438,8 @@ class ClusterStore:
             self.primary = True
             print(f"STORE {self.id} ELEITO COMO PRIMÁRIO")
 
-        # if self.id == 1:
-            # self.shutdown(30)
+        if( self.id == 1 and SHUTDOWN_30_SECONDS):
+            self.shutdown(30)
 
     def send_primary_info(self, id):
         current_primary = None
@@ -545,7 +548,8 @@ class ClusterStore:
         with open(f"logs/store{self.id}.log", 'a') as file:
             file.write(log_string)
 
-        if(self.id == 1):
+
+        if((self.id == 1) and SHUTDOWN_ON_WRITE):
             self.shutdown(0)
     
     def send_write_file(self, log_string):
